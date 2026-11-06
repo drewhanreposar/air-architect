@@ -195,6 +195,9 @@ function setModel(obj) {
 }
 setModel(demoHouse());
 function fixMaterials(root) {
+  // drop stray edge lines / points that come along with SketchUp exports
+  const strays = []; root.traverse(o => { if (o.isLine || o.isLineSegments || o.isPoints) strays.push(o); });
+  strays.forEach(o => o.parent && o.parent.remove(o));
   root.traverse(o => { if (!o.isMesh) return;
     (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => {
       m.side = THREE.DoubleSide;
