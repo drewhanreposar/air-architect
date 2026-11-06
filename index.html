@@ -30,6 +30,12 @@
   #shot img { max-width: 100%; max-height: 70vh; border-radius: 10px; border: 1px solid #2a3550; }
   #shot .row { display: flex; gap: 10px; } #shot a, #shot button { padding: 10px 18px; border-radius: 8px; border: 0; font-weight: 600; font-size: 14px; text-decoration: none; }
   #shot a { background: #5ad1ff; color: #06121e; } #shot button { background: #2a3550; color: #e6edf7; }
+  #bgVideo { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); display: none; z-index: -1; }
+  body.ar #bgVideo { display: block; } body.ar { background: transparent; }
+  #tools { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 58px); display: flex; gap: 6px; z-index: 2; }
+  #tools button { padding: 7px 12px; border-radius: 999px; border: 1px solid #36507a; background: rgba(22,35,58,.88); color: #e6edf7; font-size: 13px; }
+  #tools button.on { background: #5ad1ff; color: #06121e; border-color: #5ad1ff; font-weight: 700; }
+  #readout { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 98px); font-size: 13px; color: #ffd166; text-shadow: 0 1px 3px #000; z-index: 2; }
   @media (max-width: 600px) { #status { bottom: auto; top: calc(env(safe-area-inset-top) + 12px); left: auto; right: 12px; transform: none; font-size: 12px; } }
 </style>
 <script type="importmap">
@@ -53,14 +59,23 @@
     <div class="g">
       <b>🤏 Pinch + drag</b>: orbit / tilt<br>
       <b>🤏 Pinch → open fingers</b>: zoom in<br><b>🤏🤏 Both hands pinch</b>: zoom out<br>
-      <b>🖐 Open palm slide</b>: pan<br>
+      <b>🖐 Open palm</b>: does the active tool —<br>&nbsp;&nbsp;Pan: slide · ✂️ Section: raise/lower hand · ☀️ Sun: tilt hand like a dial<br>
+      <b>☝️ Hold</b>: switch tool · <b>🪄 AR</b>: model floats in your room<br>
       <b>✌️ Hold</b>: X-ray · <b>✊ Hold</b>: reset<br>
-      <b>👍 Hold</b>: screenshot · <b>☝️</b>: walk mode (soon)<br>
+      <b>👍 Hold</b>: screenshot<br>
       <span style="color:#8a97b0">Touch/mouse: drag = orbit, pinch/wheel = zoom</span>
     </div>
   </div>
 </div>
 
+<video id="bgVideo" autoplay playsinline muted></video>
+<div id="tools">
+  <button data-tool="pan" class="on">🖐 Pan</button>
+  <button data-tool="section">✂️ Section</button>
+  <button data-tool="sun">☀️ Sun</button>
+  <button id="arBtn">🪄 AR</button>
+</div>
+<div id="readout"></div>
 <div id="status"><span id="gesture">camera off</span></div>
 <div id="toast"></div>
 <svg id="ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="42" fill="none" stroke="#2a3550" stroke-width="8"/><circle id="arc" cx="50" cy="50" r="42" fill="none" stroke="#ffd166" stroke-width="8" stroke-linecap="round" stroke-dasharray="264" stroke-dashoffset="264" transform="rotate(-90 50 50)"/></svg>
@@ -70,13 +85,14 @@
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 
 // ================= 3D SCENE =================
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
@@ -93,20 +109,26 @@ const sun = new THREE.DirectionalLight(0xffffff, 2.2);
 sun.position.set(12, 20, 10); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -15, right: 15, top: 15, bottom: -15 });
 scene.add(sun);
-scene.add(new THREE.GridHelper(60, 60, 0x2a6f99, 0x1a2638));
+const grid = new THREE.GridHelper(60, 60, 0x2a6f99, 0x1a2638); scene.add(grid);
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.ShadowMaterial({ opacity: .35 }));
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
 
 const pivot = new THREE.Group(); scene.add(pivot);
+const draco = new DRACOLoader().setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/gltf/');
+const gltfLoader = m => new GLTFLoader(m).setDRACOLoader(draco);
 let model = null;
 
-const DEFAULT = { yaw: 0.6, pitch: 0.35, dist: innerWidth < 600 ? 30 : 22, panX: 0, panY: 0 };
+const DEFAULT = { yaw: 0.6, pitch: 0.35, dist: innerWidth < 600 ? 30 : 22, panX: 0, panY: 0, mx: 0, my: 0, sun: 11, cut: 99 };
 const T = { ...DEFAULT }, V = { ...DEFAULT };
 const clamp = THREE.MathUtils.clamp;
 
 function applyView() {
   for (const k in T) V[k] += (T[k] - V[k]) * 0.18;
   pivot.rotation.y = V.yaw;
+  pivot.position.set(V.mx, V.my, 0);
+  updateSun(V.sun);
+  cutPlane.constant = V.cut + V.my;
+  cutGlow.visible = V.cut < modelH + 0.5; cutGlow.position.y = V.cut + V.my; cutGlow.position.x = V.mx;
   camera.position.set(V.panX, Math.sin(V.pitch) * V.dist + 2 + V.panY, Math.cos(V.pitch) * V.dist);
   camera.lookAt(V.panX, 2 + V.panY, 0);
 }
@@ -131,6 +153,27 @@ function demoHouse() {
 }
 
 let wireframe = false; const origMats = new Map();
+let modelH = 6;
+const cutPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 99);
+renderer.clippingPlanes = [cutPlane];
+const cutGlow = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), new THREE.MeshBasicMaterial({ color: 0xff5a7a, transparent: true, opacity: .18, side: THREE.DoubleSide, depthWrite: false }));
+cutGlow.rotation.x = -Math.PI / 2; cutGlow.visible = false; scene.add(cutGlow);
+const cutEdge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(16, 16)), new THREE.LineBasicMaterial({ color: 0xff5a7a }));
+cutGlow.add(cutEdge);
+const sky = { day: new THREE.Color(0x1b2a44), dusk: new THREE.Color(0x3a2230), night: new THREE.Color(0x0b0f17) };
+function updateSun(t) {
+  const a = (t - 6) / 12 * Math.PI;                 // 6am → 0, noon → PI/2, 6pm → PI
+  const h = Math.sin(a);
+  sun.position.set(Math.cos(a) * 22, Math.max(h, 0.05) * 22, 8);
+  sun.intensity = 0.4 + 2.2 * Math.max(h, 0);
+  sun.color.setHSL(0.09 + 0.04 * h, 0.9 - 0.7 * h, 0.55 + 0.25 * h);
+  if (!document.body.classList.contains('ar')) {
+    const c = h > .35 ? sky.day : sky.dusk;
+    scene.background.copy(sky.night).lerp(c, Math.max(h, 0.15));
+    scene.fog.color.copy(scene.background);
+  }
+}
+function fmtTime(t) { const h = Math.floor(t), m = Math.round((t - h) * 60) % 60; return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; }
 const xrayMat = new THREE.MeshBasicMaterial({ color: 0x5ad1ff, wireframe: true, transparent: true, opacity: .7 });
 
 function setModel(obj) {
@@ -141,6 +184,7 @@ function setModel(obj) {
   const box = new THREE.Box3().setFromObject(obj), c = box.getCenter(new THREE.Vector3());
   obj.position.sub(new THREE.Vector3(c.x, box.min.y, c.z));
   model = new THREE.Group(); model.add(obj); pivot.add(model);
+  modelH = new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3()).y;
   wireframe = false; origMats.clear();
   model.traverse(o => { if (o.isMesh) origMats.set(o, o.material); });
 }
@@ -158,8 +202,8 @@ function fixMaterials(root) {
 setTimeout(async () => {
   toast('Loading canopy model…');
   try {
-    const dae = await new ColladaLoader().loadAsync('models/canopy.dae');
-    setModel(fixMaterials(dae.scene)); toast('Canopy loaded');
+    const g = await gltfLoader().loadAsync('models/canopy.glb');
+    setModel(fixMaterials(g.scene)); toast('Canopy loaded');
   } catch (e) { console.error(e); toast('Canopy failed to load — showing demo house'); }
 });
 
@@ -168,7 +212,7 @@ function toggleXray() {
   model.traverse(o => { if (o.isMesh) o.material = wireframe ? xrayMat : origMats.get(o); });
   toast(wireframe ? 'X-ray ON' : 'X-ray OFF');
 }
-function resetView() { Object.assign(T, DEFAULT); toast('View reset'); }
+function resetView() { const keepSun = T.sun; Object.assign(T, DEFAULT, { sun: keepSun }); toast('View reset'); }
 function screenshot() {
   renderer.render(scene, camera);
   const url = renderer.domElement.toDataURL('image/png');
@@ -178,6 +222,41 @@ function screenshot() {
   toast('Screenshot taken');
 }
 document.getElementById('shotClose').onclick = () => document.getElementById('shot').style.display = 'none';
+
+// ---------- Tools ----------
+const TOOLS = ['pan', 'section', 'sun'];
+const TOOL_NAMES = { pan: '🖐 Pan', section: '✂️ Section cut', sun: '☀️ Sun study' };
+let tool = 'pan';
+function setTool(t) {
+  tool = t;
+  document.querySelectorAll('#tools [data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
+  if (t === 'section' && T.cut > modelH) T.cut = modelH * 0.6;
+  toast('Tool: ' + TOOL_NAMES[t]);
+}
+function cycleTool() { setTool(TOOLS[(TOOLS.indexOf(tool) + 1) % TOOLS.length]); }
+document.querySelectorAll('#tools [data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
+const readoutEl = document.getElementById('readout');
+function updateReadout() {
+  readoutEl.textContent = tool === 'sun' ? '☀️ ' + fmtTime(T.sun)
+    : tool === 'section' ? (T.cut < modelH + .5 ? `✂️ cut at ${Math.max(0, T.cut / modelH * 100).toFixed(0)}% height` : '✂️ no cut — raise/lower your palm') : '';
+}
+
+// ---------- AR mode ----------
+const bgVideo = document.getElementById('bgVideo');
+let arOn = false;
+document.getElementById('arBtn').onclick = async () => {
+  if (!video.srcObject) await startCamera();
+  if (!video.srcObject) return;
+  arOn = !arOn;
+  document.body.classList.toggle('ar', arOn);
+  document.getElementById('arBtn').classList.toggle('on', arOn);
+  bgVideo.srcObject = video.srcObject; bgVideo.play().catch(() => {});
+  scene.background = arOn ? null : new THREE.Color(0x0b0f17);
+  scene.fog = arOn ? null : new THREE.Fog(0x0b0f17, 45, 100);
+  grid.visible = !arOn;
+  Object.assign(T, { pitch: arOn ? 0.25 : DEFAULT.pitch, dist: arOn ? 26 : DEFAULT.dist, mx: 0, my: arOn ? -3 : 0 });
+  toast(arOn ? 'AR ON — pinch & drag to move the model' : 'AR OFF');
+};
 
 // ---------- UI ----------
 const toastEl = document.getElementById('toast'); let toastT;
@@ -202,7 +281,7 @@ document.getElementById('file').addEventListener('change', async e => {
   const ext = main.name.split('.').pop().toLowerCase(), url = urls[main.name];
   toast('Loading model…');
   try {
-    if (ext === 'glb' || ext === 'gltf') setModel((await new GLTFLoader(manager).loadAsync(url)).scene);
+    if (ext === 'glb' || ext === 'gltf') setModel(fixMaterials((await gltfLoader(manager).loadAsync(url)).scene));
     else if (ext === 'dae') setModel(fixMaterials((await new ColladaLoader(manager).loadAsync(url)).scene));
     else if (ext === 'stl') setModel(new THREE.Mesh(await new STLLoader(manager).loadAsync(url), new THREE.MeshStandardMaterial({ color: 0xdddddd })));
     else {
@@ -242,7 +321,7 @@ const gestureEl = document.getElementById('gesture');
 const ring = document.getElementById('ring'), arc = document.getElementById('arc');
 let landmarker = null, lastT = -1;
 
-document.getElementById('startCam').onclick = async () => {
+async function startCamera() {
   gestureEl.textContent = 'loading hand model…';
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
@@ -256,7 +335,8 @@ document.getElementById('startCam').onclick = async () => {
     gestureEl.textContent = 'show your hand';
     document.getElementById('panel').classList.add('min'); document.getElementById('toggle').textContent = '+';
   } catch (e) { gestureEl.textContent = 'camera error: ' + e.message; }
-};
+}
+document.getElementById('startCam').onclick = startCamera;
 
 const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const pinchMem = [false, false], poseMem = [[], []];
@@ -280,14 +360,14 @@ function classify(lm, i) {
   const mem = poseMem[i]; mem.push(pose); if (mem.length > 5) mem.shift();
   const count = {}; mem.forEach(p => count[p] = (count[p] || 0) + 1);
   const stable = Object.entries(count).sort((a, b) => b[1] - a[1])[0][0];
-  return { pr, curled: !f.m && !f.r && !f.p, pose: stable, pt: { x: (lm[4].x + lm[8].x) / 2, y: (lm[4].y + lm[8].y) / 2 }, wrist: lm[0] };
+  return { pr, curled: !f.m && !f.r && !f.p, pose: stable, pt: { x: (lm[4].x + lm[8].x) / 2, y: (lm[4].y + lm[8].y) / 2 }, wrist: lm[0], roll: Math.atan2(lm[9].x - lm[0].x, lm[0].y - lm[9].y), palmY: (lm[0].y + lm[9].y) / 2 };
 }
 
 const HOLDS = {
   fist:   ['✊ hold → reset', 900, resetView],
   peace:  ['✌️ hold → X-ray', 700, toggleXray],
   thumbs: ['👍 hold → screenshot', 800, screenshot],
-  point:  ['☝️ walk mode (coming next)', 99999, () => {}],
+  point:  ['☝️ hold → switch tool', 700, cycleTool],
 };
 let hold = { name: '', t: 0, fired: false }, prev = null, mode = '';
 const lastPinchAt = [0, 0];
@@ -316,18 +396,32 @@ function control(hands) {
   } else if (pinching.length === 1) {
     const p = pinching[0].pt;
     if (mode === 'one' && prev) {
-      T.yaw += (p.x - prev.x) * 7;
-      T.pitch = clamp(T.pitch + (p.y - prev.y) * 4, 0.05, 1.45);
+      if (arOn) { T.mx += (p.x - prev.x) * 30; T.my -= (p.y - prev.y) * 22; }
+      else {
+        T.yaw += (p.x - prev.x) * 7;
+        T.pitch = clamp(T.pitch + (p.y - prev.y) * 4, 0.05, 1.45);
+      }
     }
-    mode = 'one'; prev = { ...p }; label = '🤏 orbit';
+    mode = 'one'; prev = { ...p }; label = arOn ? '🤏 grab & move' : '🤏 orbit';
   } else {
     const palm = info.find(h => h.pose === 'palm');
     if (palm) {
-      if (mode === 'palm' && prev) {
+      if (tool === 'section') {
+        // palm high in frame = cut near the roof, low = near the floor
+        T.cut = clamp((0.85 - palm.palmY) / 0.6, 0, 1.08) * modelH;
+        label = '✂️ slicing';
+      } else if (tool === 'sun') {
+        // tilt hand like a dial: left = morning, upright = noon, right = evening
+        T.sun = clamp(12 + palm.roll / (Math.PI / 3) * 6, 6, 18);
+        label = '☀️ moving the sun';
+      } else if (mode === 'palm' && prev) {
         const dx = palm.wrist.x - prev.x, dy = palm.wrist.y - prev.y;
-        if (Math.hypot(dx, dy) > 0.003) { T.panX -= dx * 25; T.panY += dy * 18; }
+        if (Math.hypot(dx, dy) > 0.003) {
+          if (arOn) T.yaw += dx * 7; else { T.panX -= dx * 25; T.panY += dy * 18; }
+        }
       }
-      mode = 'palm'; prev = { ...palm.wrist }; label = '🖐 pan';
+      if (tool === 'pan') label = arOn ? '🖐 spin model' : '🖐 pan';
+      mode = 'palm'; prev = { ...palm.wrist };
     } else {
       mode = ''; prev = null;
       const h = info.find(h => HOLDS[h.pose]);
@@ -346,6 +440,7 @@ function control(hands) {
   } else { hold.name = ''; ring.style.opacity = 0; }
 
   gestureEl.textContent = label;
+  updateReadout();
   return info;
 }
 
@@ -374,7 +469,7 @@ function trackHands() {
 
 // ================= LOOP =================
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
-renderer.setAnimationLoop(() => { trackHands(); applyView(); renderer.render(scene, camera); });
+renderer.setAnimationLoop(() => { if (!landmarker) updateReadout(); trackHands(); applyView(); renderer.render(scene, camera); });
 </script>
 </body>
 </html>
