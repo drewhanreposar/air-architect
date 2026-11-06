@@ -52,7 +52,7 @@
     </label>
     <div class="g">
       <b>🤏 Pinch + drag</b>: orbit / tilt<br>
-      <b>🤏🤏 Both hands</b>: pull apart = zoom, twist = rotate<br>
+      <b>🤏 Pinch → open fingers</b>: zoom in<br><b>🤏🤏 Both hands pinch</b>: zoom out<br>
       <b>🖐 Open palm slide</b>: pan<br>
       <b>✌️ Hold</b>: X-ray · <b>✊ Hold</b>: reset<br>
       <b>👍 Hold</b>: screenshot · <b>☝️</b>: walk mode (soon)<br>
@@ -280,7 +280,7 @@ function classify(lm, i) {
   const mem = poseMem[i]; mem.push(pose); if (mem.length > 5) mem.shift();
   const count = {}; mem.forEach(p => count[p] = (count[p] || 0) + 1);
   const stable = Object.entries(count).sort((a, b) => b[1] - a[1])[0][0];
-  return { pose: stable, pt: { x: (lm[4].x + lm[8].x) / 2, y: (lm[4].y + lm[8].y) / 2 }, wrist: lm[0] };
+  return { pr, curled: !f.m && !f.r && !f.p, pose: stable, pt: { x: (lm[4].x + lm[8].x) / 2, y: (lm[4].y + lm[8].y) / 2 }, wrist: lm[0] };
 }
 
 const HOLDS = {
@@ -290,20 +290,29 @@ const HOLDS = {
   point:  ['☝️ walk mode (coming next)', 99999, () => {}],
 };
 let hold = { name: '', t: 0, fired: false }, prev = null, mode = '';
+const lastPinchAt = [0, 0];
 
 function control(hands) {
   const info = hands.map((h, i) => classify(h, i));
   const pinching = info.filter(h => h.pose === 'pinch').sort((a, b) => a.pt.x - b.pt.x);
   let label = hands.length ? 'idle' : 'no hand', holdName = '';
 
+  const now0 = performance.now();
+  info.forEach((h, i) => { if (h.pose === 'pinch') lastPinchAt[i] = now0; });
+  const opener = info.findIndex((h, i) => h.pose !== 'pinch' && h.pose !== 'fist' && h.pose !== 'thumbs' && h.curled && now0 - lastPinchAt[i] < 1200);
   if (pinching.length === 2) {
-    const [a, b] = pinching;
-    const cur = { dist: d(a.pt, b.pt), ang: Math.atan2(b.pt.y - a.pt.y, b.pt.x - a.pt.x) };
-    if (mode === 'two' && prev) {
-      T.dist = clamp(T.dist * (prev.dist / cur.dist), 6, 80);
-      T.yaw -= (cur.ang - prev.ang) * 1.5;
+    // both hands pinching = zoom OUT (hold to keep zooming)
+    T.dist = clamp(T.dist * 1.02, 6, 80);
+    mode = 'two'; prev = null; label = '🤏🤏 zoom out';
+  } else if (opener >= 0) {
+    // one hand: pinch, then open thumb + index = zoom IN
+    const h = info[opener];
+    if (mode === 'open' && prev) {
+      const grow = h.pr - prev.pr;
+      if (grow > 0) T.dist = clamp(T.dist * (1 - grow * 0.9), 6, 80);
     }
-    mode = 'two'; prev = cur; label = '🤏🤏 zoom / twist';
+    lastPinchAt[opener] = now0;            // keep zoom alive while fingers stay in the open-pinch shape
+    mode = 'open'; prev = { pr: Math.max(h.pr, prev?.pr ?? 0) }; label = '🤏➡️ zoom in';
   } else if (pinching.length === 1) {
     const p = pinching[0].pt;
     if (mode === 'one' && prev) {
