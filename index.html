@@ -36,6 +36,9 @@
   #tools button { padding: 7px 12px; border-radius: 999px; border: 1px solid #36507a; background: rgba(22,35,58,.88); color: #e6edf7; font-size: 13px; }
   #tools button.on { background: #5ad1ff; color: #06121e; border-color: #5ad1ff; font-weight: 700; }
   #readout { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom) + 98px); font-size: 13px; color: #ffd166; text-shadow: 0 1px 3px #000; z-index: 2; }
+  #views { position: fixed; right: 12px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 6px; z-index: 2; }
+  #views button { padding: 7px 10px; border-radius: 10px; border: 1px solid #36507a; background: rgba(22,35,58,.88); color: #e6edf7; font-size: 12px; }
+  #views button.on { background: #ffd166; color: #1a1300; border-color: #ffd166; font-weight: 700; }
   @media (max-width: 600px) { #status { bottom: auto; top: calc(env(safe-area-inset-top) + 12px); left: auto; right: 12px; transform: none; font-size: 12px; } }
 </style>
 <script type="importmap">
@@ -63,6 +66,7 @@
       <b>☝️ Hold</b>: switch tool · <b>🪄 AR</b>: model floats in your room<br>
       <b>✌️ Hold</b>: X-ray · <b>✊ Hold</b>: reset<br>
       <b>👍 Hold</b>: screenshot<br>
+      <b>🖐 Fast swipe</b> left/right: next / previous saved view<br>
       <span style="color:#8a97b0">Touch/mouse: drag = orbit, pinch/wheel = zoom</span>
     </div>
   </div>
@@ -76,6 +80,7 @@
   <button id="arBtn">🪄 AR</button>
 </div>
 <div id="readout"></div>
+<div id="views"><button id="saveView">＋ Save view</button></div>
 <div id="status"><span id="gesture">camera off</span></div>
 <div id="toast"></div>
 <svg id="ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="42" fill="none" stroke="#2a3550" stroke-width="8"/><circle id="arc" cx="50" cy="50" r="42" fill="none" stroke="#ffd166" stroke-width="8" stroke-linecap="round" stroke-dasharray="264" stroke-dashoffset="264" transform="rotate(-90 50 50)"/></svg>
@@ -212,7 +217,13 @@ function toggleXray() {
   model.traverse(o => { if (o.isMesh) o.material = wireframe ? xrayMat : origMats.get(o); });
   toast(wireframe ? 'X-ray ON' : 'X-ray OFF');
 }
-function resetView() { const keepSun = T.sun; Object.assign(T, DEFAULT, { sun: keepSun }); toast('View reset'); }
+let undoView = null, undoUntil = 0;
+function resetView() {
+  if (undoView && performance.now() < undoUntil) { Object.assign(T, undoView); undoView = null; toast('Reset undone'); return; }
+  undoView = { ...T }; undoUntil = performance.now() + 5000;
+  const keepSun = T.sun; Object.assign(T, DEFAULT, { sun: keepSun });
+  toast('View reset — hold ✊ again within 5s to undo');
+}
 function screenshot() {
   renderer.render(scene, camera);
   const url = renderer.domElement.toDataURL('image/png');
@@ -240,6 +251,35 @@ function updateReadout() {
   readoutEl.textContent = tool === 'sun' ? '☀️ ' + fmtTime(T.sun)
     : tool === 'section' ? (T.cut < modelH + .5 ? `✂️ cut at ${Math.max(0, T.cut / modelH * 100).toFixed(0)}% height` : '✂️ no cut — raise/lower your palm') : '';
 }
+
+// ---------- Saved views ----------
+let views = [];
+try { views = JSON.parse(localStorage.getItem('aa_views') || '[]'); } catch {}
+let viewIdx = -1;
+const viewsEl = document.getElementById('views');
+function renderViews() {
+  viewsEl.querySelectorAll('.v').forEach(b => b.remove());
+  views.forEach((v, i) => {
+    const b = document.createElement('button'); b.className = 'v' + (i === viewIdx ? ' on' : '');
+    b.textContent = 'View ' + (i + 1); b.title = 'Tap to go, long-press to delete';
+    b.onclick = () => goView(i);
+    b.oncontextmenu = e => { e.preventDefault(); views.splice(i, 1); viewIdx = -1; saveViews(); toast('View deleted'); };
+    let t; b.onpointerdown = () => t = setTimeout(() => b.oncontextmenu(new Event('x')), 700);
+    b.onpointerup = b.onpointerleave = () => clearTimeout(t);
+    viewsEl.appendChild(b);
+  });
+}
+function saveViews() { try { localStorage.setItem('aa_views', JSON.stringify(views)); } catch {} renderViews(); }
+function goView(i) {
+  if (!views.length) return toast('No saved views yet');
+  viewIdx = (i + views.length) % views.length;
+  Object.assign(T, views[viewIdx]); renderViews(); toast('View ' + (viewIdx + 1));
+}
+document.getElementById('saveView').onclick = () => {
+  if (views.length >= 8) return toast('Max 8 views');
+  views.push({ ...T }); viewIdx = views.length - 1; saveViews(); toast('Saved as View ' + views.length);
+};
+renderViews();
 
 // ---------- AR mode ----------
 const bgVideo = document.getElementById('bgVideo');
@@ -339,6 +379,22 @@ async function startCamera() {
 document.getElementById('startCam').onclick = startCamera;
 
 const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+// One Euro filter: smooths jitter when still, stays responsive when moving fast
+const oe = [{}, {}];
+function oneEuro(i, h, t) {
+  const st = oe[i], minCut = 1.2, beta = 18, dCut = 1.0;
+  const alpha = (cut, dt) => { const r = 2 * Math.PI * cut * dt; return r / (r + 1); };
+  if (!st.prev || t - st.t > 0.3) { st.prev = h.map(p => ({ ...p })); st.dx = h.map(() => ({ x: 0, y: 0 })); st.t = t; return h; }
+  const dt = Math.max(t - st.t, 1e-3); st.t = t;
+  const ad = alpha(dCut, dt);
+  return h.map((p, k) => {
+    const q = st.prev[k], v = st.dx[k];
+    v.x += ad * ((p.x - q.x) / dt - v.x); v.y += ad * ((p.y - q.y) / dt - v.y);
+    const a = alpha(minCut + beta * Math.hypot(v.x, v.y), dt);
+    q.x += a * (p.x - q.x); q.y += a * (p.y - q.y);
+    return { x: q.x, y: q.y };
+  });
+}
 const pinchMem = [false, false], poseMem = [[], []];
 
 function classify(lm, i) {
@@ -369,7 +425,7 @@ const HOLDS = {
   thumbs: ['👍 hold → screenshot', 800, screenshot],
   point:  ['☝️ hold → switch tool', 700, cycleTool],
 };
-let hold = { name: '', t: 0, fired: false }, prev = null, mode = '';
+let hold = { name: '', t: 0, fired: false }, prev = null, mode = '', spin = 0, cooldownUntil = 0, swipeAt = 0;
 const lastPinchAt = [0, 0];
 
 function control(hands) {
@@ -378,6 +434,7 @@ function control(hands) {
   let label = hands.length ? 'idle' : 'no hand', holdName = '';
 
   const now0 = performance.now();
+  if (mode !== 'one') { T.yaw += spin; spin *= 0.9; if (Math.abs(spin) < 1e-4) spin = 0; }
   info.forEach((h, i) => { if (h.pose === 'pinch') lastPinchAt[i] = now0; });
   const opener = info.findIndex((h, i) => h.pose !== 'pinch' && h.pose !== 'fist' && h.pose !== 'thumbs' && h.curled && now0 - lastPinchAt[i] < 1200);
   if (pinching.length === 2) {
@@ -402,10 +459,17 @@ function control(hands) {
         T.pitch = clamp(T.pitch + (p.y - prev.y) * 4, 0.05, 1.45);
       }
     }
+    if (mode === 'one' && prev && !arOn) spin = (p.x - prev.x) * 7;
     mode = 'one'; prev = { ...p }; label = arOn ? '🤏 grab & move' : '🤏 orbit';
   } else {
     const palm = info.find(h => h.pose === 'palm');
     if (palm) {
+      const swipeV = (mode === 'palm' && prev) ? palm.wrist.x - prev.x : 0;
+      if (views.length && Math.abs(swipeV) > 0.07 && now0 - swipeAt > 800) {
+        swipeAt = now0; goView(viewIdx + (swipeV > 0 ? 1 : -1));
+        mode = 'palm'; prev = { ...palm.wrist }; gestureEl.textContent = '🖐 swipe → view'; return info;
+      }
+      if (now0 - swipeAt < 400) { mode = 'palm'; prev = { ...palm.wrist }; return info; }
       if (tool === 'section') {
         // palm high in frame = cut near the roof, low = near the floor
         T.cut = clamp((0.85 - palm.palmY) / 0.6, 0, 1.08) * modelH;
@@ -430,13 +494,14 @@ function control(hands) {
   }
 
   const now = performance.now();
+  if (holdName && now < cooldownUntil) holdName = '';
   if (holdName) {
     if (hold.name !== holdName) hold = { name: holdName, t: now, fired: false };
     const [, ms, fn] = HOLDS[holdName];
     const prog = Math.min(1, (now - hold.t) / ms);
     ring.style.opacity = hold.fired || ms > 9999 ? 0 : 1;
     arc.setAttribute('stroke-dashoffset', 264 * (1 - prog));
-    if (prog >= 1 && !hold.fired) { hold.fired = true; fn(); }
+    if (prog >= 1 && !hold.fired) { hold.fired = true; cooldownUntil = now + 1000; fn(); }
   } else { hold.name = ''; ring.style.opacity = 0; }
 
   gestureEl.textContent = label;
@@ -463,7 +528,9 @@ function trackHands() {
   if (!landmarker || video.readyState < 2 || video.currentTime === lastT) return;
   lastT = video.currentTime;
   const res = landmarker.detectForVideo(video, performance.now());
-  const hands = (res.landmarks || []).map(h => h.map(p => ({ x: 1 - p.x, y: p.y })));
+  const tt = performance.now() / 1000;
+  const hands = (res.landmarks || []).map((h, i) => oneEuro(i, h.map(p => ({ x: 1 - p.x, y: p.y })), tt));
+  if (!hands.length) { oe[0] = {}; oe[1] = {}; }
   drawHands(hands, control(hands));
 }
 
