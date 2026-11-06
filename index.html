@@ -3,87 +3,256 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Air Architect — Gesture Test</title>
+<title>Air Architect</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; background: #0b0f17; color: #e6edf7; font-family: system-ui, sans-serif; overflow: hidden; }
-  #stage { position: fixed; inset: 0; }
-  video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); opacity: .6; }
-  canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-  #top { position: fixed; top: calc(env(safe-area-inset-top) + 12px); left: 0; right: 0; text-align: center; pointer-events: none; }
-  #label { display: inline-block; font-size: 26px; font-weight: 700; padding: 10px 22px; border-radius: 999px; background: rgba(11,15,23,.75); border: 1px solid #2a3550; color: #5ad1ff; }
-  #sub { margin-top: 8px; font-size: 13px; color: #b8c4da; text-shadow: 0 1px 3px #000; }
-  #ring { position: fixed; left: 50%; top: 50%; width: 120px; height: 120px; transform: translate(-50%,-50%); pointer-events: none; opacity: 0; transition: opacity .15s; }
-  #log { position: fixed; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom) + 12px); background: rgba(11,15,23,.8); border: 1px solid #2a3550; border-radius: 12px; padding: 10px 12px; font-size: 12px; line-height: 1.6; max-height: 30vh; overflow: hidden; }
-  #log b { color: #ffd166; }
-  #start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #0b0f17; z-index: 5; padding: 24px; text-align: center; }
-  #start h1 { font-size: 28px; letter-spacing: 1px; } #start h1 span { color: #5ad1ff; }
-  #start p { font-size: 14px; color: #8a97b0; max-width: 320px; line-height: 1.5; }
-  #start button { font-size: 18px; padding: 14px 28px; border-radius: 12px; border: 0; background: #5ad1ff; color: #06121e; font-weight: 700; }
-  #flip { position: fixed; right: 12px; top: calc(env(safe-area-inset-top) + 70px); font-size: 13px; padding: 8px 12px; border-radius: 10px; border: 1px solid #36507a; background: rgba(22,35,58,.85); color: #e6edf7; z-index: 3; }
+  #scene { position: fixed; inset: 0; touch-action: none; }
+  #cam { position: fixed; right: 12px; bottom: calc(env(safe-area-inset-bottom) + 12px); width: min(32vw, 260px); aspect-ratio: 4/3; border-radius: 12px; overflow: hidden; border: 1px solid #2a3550; background: #000; display: none; }
+  #cam video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); opacity: .6; }
+  #cam canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #panel { position: fixed; left: 12px; top: calc(env(safe-area-inset-top) + 12px); width: min(300px, calc(100vw - 24px)); background: rgba(15,22,36,.88); backdrop-filter: blur(8px); border: 1px solid #2a3550; border-radius: 14px; padding: 14px; z-index: 2; }
+  #panel.min .body { display: none; }
+  .head { display: flex; justify-content: space-between; align-items: center; }
+  h1 { font-size: 17px; letter-spacing: .5px; } h1 span { color: #5ad1ff; }
+  #toggle { background: none; border: 0; color: #8a97b0; font-size: 18px; width: auto; margin: 0; padding: 0 4px; }
+  .sub { font-size: 12px; color: #8a97b0; margin: 4px 0 10px; }
+  label.btn, button.btn { display: block; width: 100%; text-align: center; padding: 9px; margin-bottom: 8px; border-radius: 8px; border: 1px solid #36507a; background: #16233a; color: #e6edf7; font-size: 13px; cursor: pointer; }
+  button.primary { background: #5ad1ff; color: #06121e; border: 0; font-weight: 700; }
+  input[type=file] { display: none; }
+  .g { font-size: 12px; line-height: 1.7; color: #b8c4da; }
+  .g b { color: #5ad1ff; font-weight: 600; }
+  #status { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 14px); transform: translateX(-50%); background: rgba(15,22,36,.88); border: 1px solid #2a3550; padding: 8px 16px; border-radius: 999px; font-size: 14px; white-space: nowrap; z-index: 2; }
+  #gesture { color: #5ad1ff; font-weight: 700; }
+  #ring { position: fixed; left: 50%; top: 50%; width: 110px; height: 110px; transform: translate(-50%,-50%); pointer-events: none; opacity: 0; transition: opacity .15s; z-index: 3; }
+  #toast { position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 16px); transform: translateX(-50%); background: #ffd166; color: #1a1300; font-weight: 700; padding: 8px 16px; border-radius: 999px; font-size: 14px; opacity: 0; transition: opacity .25s; z-index: 4; pointer-events: none; }
+  #shot { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: none; flex-direction: column; align-items: center; justify-content: center; gap: 12px; z-index: 6; padding: 20px; }
+  #shot img { max-width: 100%; max-height: 70vh; border-radius: 10px; border: 1px solid #2a3550; }
+  #shot .row { display: flex; gap: 10px; } #shot a, #shot button { padding: 10px 18px; border-radius: 8px; border: 0; font-weight: 600; font-size: 14px; text-decoration: none; }
+  #shot a { background: #5ad1ff; color: #06121e; } #shot button { background: #2a3550; color: #e6edf7; }
+  @media (max-width: 600px) { #status { bottom: auto; top: calc(env(safe-area-inset-top) + 12px); left: auto; right: 12px; transform: none; font-size: 12px; } }
 </style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
 </head>
 <body>
-<div id="stage"><video id="video" autoplay playsinline muted></video><canvas id="overlay"></canvas></div>
+<div id="scene"></div>
 
-<div id="top"><div id="label">—</div><div id="sub">show your hand to the camera</div></div>
-<svg id="ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="42" fill="none" stroke="#2a3550" stroke-width="8"/><circle id="arc" cx="50" cy="50" r="42" fill="none" stroke="#ffd166" stroke-width="8" stroke-linecap="round" stroke-dasharray="264" stroke-dashoffset="264" transform="rotate(-90 50 50)"/></svg>
-<button id="flip">🔄 Flip camera</button>
-<div id="log">Triggered gestures appear here.</div>
-
-<div id="start">
-  <h1>AIR <span>ARCHITECT</span></h1>
-  <p>Gesture recognizer test. Allow camera access, then try: pinch, two-hand pinch, open palm, fist, peace ✌️, point ☝️, thumbs up 👍.</p>
-  <button id="go">Start camera</button>
-  <p id="err" style="color:#ff7a7a"></p>
+<div id="panel">
+  <div class="head"><h1>AIR <span>ARCHITECT</span></h1><button id="toggle">–</button></div>
+  <div class="body">
+    <div class="sub">Load a SketchUp export, control it with your hands.</div>
+    <button id="startCam" class="btn primary">🎥 Start camera</button>
+    <label class="btn">📂 Load model (.glb .dae .obj .stl)
+      <input id="file" type="file" multiple accept=".glb,.gltf,.dae,.obj,.mtl,.stl,.png,.jpg,.jpeg,.bin">
+    </label>
+    <div class="g">
+      <b>🤏 Pinch + drag</b>: orbit / tilt<br>
+      <b>🤏🤏 Both hands</b>: pull apart = zoom, twist = rotate<br>
+      <b>🖐 Open palm slide</b>: pan<br>
+      <b>✌️ Hold</b>: X-ray · <b>✊ Hold</b>: reset<br>
+      <b>👍 Hold</b>: screenshot · <b>☝️</b>: walk mode (soon)<br>
+      <span style="color:#8a97b0">Touch/mouse: drag = orbit, pinch/wheel = zoom</span>
+    </div>
+  </div>
 </div>
 
-<script type="module">
-const video = document.getElementById('video');
-const cv = document.getElementById('overlay'), ctx = cv.getContext('2d');
-const labelEl = document.getElementById('label'), subEl = document.getElementById('sub');
-const ring = document.getElementById('ring'), arc = document.getElementById('arc');
-const logEl = document.getElementById('log');
-let landmarker, facing = 'user', stream, lastT = -1;
+<div id="status"><span id="gesture">camera off</span></div>
+<div id="toast"></div>
+<svg id="ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="42" fill="none" stroke="#2a3550" stroke-width="8"/><circle id="arc" cx="50" cy="50" r="42" fill="none" stroke="#ffd166" stroke-width="8" stroke-linecap="round" stroke-dasharray="264" stroke-dashoffset="264" transform="rotate(-90 50 50)"/></svg>
+<div id="cam"><video id="video" autoplay playsinline muted></video><canvas id="overlay"></canvas></div>
+<div id="shot"><img id="shotImg" alt="screenshot"><div class="row"><a id="shotDl" download="air-architect.png">Save image</a><button id="shotClose">Close</button></div><div style="font-size:12px;color:#8a97b0">On phone: long-press the image to save</div></div>
 
-async function openCam() {
-  if (stream) stream.getTracks().forEach(t => t.stop());
-  stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
-  video.srcObject = stream; await video.play();
-  video.style.transform = facing === 'user' ? 'scaleX(-1)' : 'none';
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+
+// ================= 3D SCENE =================
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.getElementById('scene').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0f17);
+scene.fog = new THREE.Fog(0x0b0f17, 45, 100);
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 500);
+
+scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x1a1f2b, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.position.set(12, 20, 10); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -15, right: 15, top: 15, bottom: -15 });
+scene.add(sun);
+scene.add(new THREE.GridHelper(60, 60, 0x2a6f99, 0x1a2638));
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.ShadowMaterial({ opacity: .35 }));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+
+const pivot = new THREE.Group(); scene.add(pivot);
+let model = null;
+
+const DEFAULT = { yaw: 0.6, pitch: 0.35, dist: innerWidth < 600 ? 30 : 22, panX: 0, panY: 0 };
+const T = { ...DEFAULT }, V = { ...DEFAULT };
+const clamp = THREE.MathUtils.clamp;
+
+function applyView() {
+  for (const k in T) V[k] += (T[k] - V[k]) * 0.18;
+  pivot.rotation.y = V.yaw;
+  camera.position.set(V.panX, Math.sin(V.pitch) * V.dist + 2 + V.panY, Math.cos(V.pitch) * V.dist);
+  camera.lookAt(V.panX, 2 + V.panY, 0);
 }
 
-document.getElementById('go').onclick = async () => {
-  const err = document.getElementById('err');
-  err.textContent = 'Loading hand model…';
+function demoHouse() {
+  const g = new THREE.Group();
+  const wall = new THREE.MeshStandardMaterial({ color: 0xeae6df, roughness: .8 });
+  const roofM = new THREE.MeshStandardMaterial({ color: 0x3b4a5e, roughness: .6 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x7fd3ff, roughness: .05, transparent: true, opacity: .55 });
+  const wood = new THREE.MeshStandardMaterial({ color: 0x8a5a3b });
+  const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); return m; };
+  add(new THREE.BoxGeometry(12, .3, 9), new THREE.MeshStandardMaterial({ color: 0x9aa3ad }), 0, .15, 0);
+  add(new THREE.BoxGeometry(10, 3.2, 7), wall, 0, 1.9, 0);
+  add(new THREE.BoxGeometry(5, 3, 5), wall, 2.5, 4.8, -1);
+  add(new THREE.BoxGeometry(5.4, .25, 5.4), roofM, 2.5, 6.4, -1);
+  const tri = new THREE.Shape(); tri.moveTo(-5.4, 0); tri.lineTo(0, 2.2); tri.lineTo(5.4, 0); tri.lineTo(-5.4, 0);
+  add(new THREE.ExtrudeGeometry(tri, { depth: 3, bevelEnabled: false }), roofM, -2.4, 3.5, 0.6).scale.set(.5, 1, 1);
+  add(new THREE.BoxGeometry(3.2, 2, .1), glass, -2.5, 2, 3.52);
+  add(new THREE.BoxGeometry(3.6, 2.2, .1), glass, 2.5, 4.8, 1.52);
+  add(new THREE.BoxGeometry(1, 2.3, .12), wood, 1.5, 1.4, 3.52);
+  return g;
+}
+
+let wireframe = false; const origMats = new Map();
+const xrayMat = new THREE.MeshBasicMaterial({ color: 0x5ad1ff, wireframe: true, transparent: true, opacity: .7 });
+
+function setModel(obj) {
+  if (model) pivot.remove(model);
+  obj.traverse(o => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
+  const size = new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3());
+  obj.scale.multiplyScalar(12 / (Math.max(size.x, size.y, size.z) || 1));
+  const box = new THREE.Box3().setFromObject(obj), c = box.getCenter(new THREE.Vector3());
+  obj.position.sub(new THREE.Vector3(c.x, box.min.y, c.z));
+  model = new THREE.Group(); model.add(obj); pivot.add(model);
+  wireframe = false; origMats.clear();
+  model.traverse(o => { if (o.isMesh) origMats.set(o, o.material); });
+}
+setModel(demoHouse());
+
+function toggleXray() {
+  wireframe = !wireframe;
+  model.traverse(o => { if (o.isMesh) o.material = wireframe ? xrayMat : origMats.get(o); });
+  toast(wireframe ? 'X-ray ON' : 'X-ray OFF');
+}
+function resetView() { Object.assign(T, DEFAULT); toast('View reset'); }
+function screenshot() {
+  renderer.render(scene, camera);
+  const url = renderer.domElement.toDataURL('image/png');
+  document.getElementById('shotImg').src = url;
+  document.getElementById('shotDl').href = url;
+  document.getElementById('shot').style.display = 'flex';
+  toast('Screenshot taken');
+}
+document.getElementById('shotClose').onclick = () => document.getElementById('shot').style.display = 'none';
+
+// ---------- UI ----------
+const toastEl = document.getElementById('toast'); let toastT;
+function toast(msg) {
+  toastEl.textContent = msg; toastEl.style.opacity = 1;
+  clearTimeout(toastT); toastT = setTimeout(() => toastEl.style.opacity = 0, 1400);
+  if (navigator.vibrate) navigator.vibrate(40);
+}
+document.getElementById('toggle').onclick = () => {
+  const p = document.getElementById('panel'); p.classList.toggle('min');
+  document.getElementById('toggle').textContent = p.classList.contains('min') ? '+' : '–';
+};
+
+// ---------- Load SketchUp exports ----------
+document.getElementById('file').addEventListener('change', async e => {
+  const files = [...e.target.files]; if (!files.length) return;
+  const urls = {}; files.forEach(f => urls[f.name] = URL.createObjectURL(f));
+  const manager = new THREE.LoadingManager();
+  manager.setURLModifier(u => urls[decodeURIComponent(u.split(/[\\/]/).pop())] || u);
+  const main = files.find(f => /\.(glb|gltf|dae|obj|stl)$/i.test(f.name));
+  if (!main) return toast('Pick a .glb .dae .obj or .stl');
+  const ext = main.name.split('.').pop().toLowerCase(), url = urls[main.name];
+  toast('Loading model…');
   try {
-    await openCam();
+    if (ext === 'glb' || ext === 'gltf') setModel((await new GLTFLoader(manager).loadAsync(url)).scene);
+    else if (ext === 'dae') setModel((await new ColladaLoader(manager).loadAsync(url)).scene);
+    else if (ext === 'stl') setModel(new THREE.Mesh(await new STLLoader(manager).loadAsync(url), new THREE.MeshStandardMaterial({ color: 0xdddddd })));
+    else {
+      const loader = new OBJLoader(manager), mtl = files.find(f => /\.mtl$/i.test(f.name));
+      if (mtl) { const m = await new MTLLoader(manager).loadAsync(urls[mtl.name]); m.preload(); loader.setMaterials(m); }
+      setModel(await loader.loadAsync(url));
+    }
+    Object.assign(T, DEFAULT); toast('Model loaded');
+  } catch (err) { console.error(err); toast('Could not load: ' + err.message); }
+});
+
+// ---------- Touch / mouse fallback ----------
+const pointers = new Map(); let pinch0 = 0;
+const el = renderer.domElement;
+el.addEventListener('pointerdown', e => { el.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { x: e.clientX, y: e.clientY }); });
+el.addEventListener('pointerup', e => { pointers.delete(e.pointerId); pinch0 = 0; });
+el.addEventListener('pointercancel', e => { pointers.delete(e.pointerId); pinch0 = 0; });
+el.addEventListener('pointermove', e => {
+  const p = pointers.get(e.pointerId); if (!p) return;
+  if (pointers.size === 1) {
+    T.yaw += (e.clientX - p.x) * 0.008;
+    T.pitch = clamp(T.pitch + (e.clientY - p.y) * 0.006, 0.05, 1.45);
+  }
+  p.x = e.clientX; p.y = e.clientY;
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()], dd = Math.hypot(a.x - b.x, a.y - b.y);
+    if (pinch0) T.dist = clamp(T.dist * pinch0 / dd, 6, 80);
+    pinch0 = dd;
+  }
+});
+addEventListener('wheel', e => { T.dist = clamp(T.dist * (1 + e.deltaY * 0.001), 6, 80); });
+
+// ================= HAND RECOGNIZER =================
+const video = document.getElementById('video');
+const cv = document.getElementById('overlay'), ctx = cv.getContext('2d');
+const gestureEl = document.getElementById('gesture');
+const ring = document.getElementById('ring'), arc = document.getElementById('arc');
+let landmarker = null, lastT = -1;
+
+document.getElementById('startCam').onclick = async () => {
+  gestureEl.textContent = 'loading hand model…';
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+    video.srcObject = stream; await video.play();
+    document.getElementById('cam').style.display = 'block';
     const { FilesetResolver, HandLandmarker } = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs');
     const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
-    const opts = d => ({ baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', delegate: d }, runningMode: 'VIDEO', numHands: 2, minHandDetectionConfidence: .6, minTrackingConfidence: .5 });
+    const opts = dl => ({ baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', delegate: dl }, runningMode: 'VIDEO', numHands: 2, minHandDetectionConfidence: .6, minTrackingConfidence: .5 });
     try { landmarker = await HandLandmarker.createFromOptions(vision, opts('GPU')); }
     catch { landmarker = await HandLandmarker.createFromOptions(vision, opts('CPU')); }
-    document.getElementById('start').remove();
-    loop();
-  } catch (e) { err.textContent = 'Error: ' + e.message; }
+    gestureEl.textContent = 'show your hand';
+    document.getElementById('panel').classList.add('min'); document.getElementById('toggle').textContent = '+';
+  } catch (e) { gestureEl.textContent = 'camera error: ' + e.message; }
 };
-document.getElementById('flip').onclick = async () => { facing = facing === 'user' ? 'environment' : 'user'; try { await openCam(); } catch (e) { log('camera flip failed'); } };
 
-// ---------- Recognizer ----------
 const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-const pinchMem = [false, false];
-const poseMem = [[], []];          // recent raw poses per hand, for stability voting
+const pinchMem = [false, false], poseMem = [[], []];
 
 function classify(lm, i) {
   const size = d(lm[0], lm[9]) || 1e-3;
   const pr = d(lm[4], lm[8]) / size;
-  pinchMem[i] = pinchMem[i] ? pr < 0.5 : pr < 0.32;          // hysteresis
+  pinchMem[i] = pinchMem[i] ? pr < 0.5 : pr < 0.32;
   const ext = (tip, pip) => d(lm[0], lm[tip]) > d(lm[0], lm[pip]) * 1.12;
   const f = { i: ext(8, 6), m: ext(12, 10), r: ext(16, 14), p: ext(20, 18) };
   const thumbOut = d(lm[4], lm[9]) / size > 0.75;
   const thumbUp = lm[4].y < lm[3].y && lm[3].y < lm[2].y && (lm[2].y - lm[4].y) / size > 0.35;
   const n = f.i + f.m + f.r + f.p;
-
   let pose = 'none';
   if (pinchMem[i]) pose = 'pinch';
   else if (n === 0 && thumbUp && thumbOut) pose = 'thumbs';
@@ -91,109 +260,95 @@ function classify(lm, i) {
   else if (n === 4) pose = 'palm';
   else if (f.i && f.m && !f.r && !f.p) pose = 'peace';
   else if (f.i && !f.m && !f.r && !f.p) pose = 'point';
-
-  // stability: majority of last 5 frames
   const mem = poseMem[i]; mem.push(pose); if (mem.length > 5) mem.shift();
   const count = {}; mem.forEach(p => count[p] = (count[p] || 0) + 1);
   const stable = Object.entries(count).sort((a, b) => b[1] - a[1])[0][0];
-  return { pose: stable, pt: { x: (lm[4].x + lm[8].x) / 2, y: (lm[4].y + lm[8].y) / 2 }, wrist: lm[0], size };
+  return { pose: stable, pt: { x: (lm[4].x + lm[8].x) / 2, y: (lm[4].y + lm[8].y) / 2 }, wrist: lm[0] };
 }
 
-const NAMES = { pinch: '🤏 Pinch', thumbs: '👍 Thumbs up', fist: '✊ Fist', palm: '🖐 Open palm', peace: '✌️ Peace', point: '☝️ Point', none: '…' };
-const HOLDS = { fist: ['Reset view', 900], peace: ['X-ray toggle', 700], point: ['Walk mode', 800], thumbs: ['Screenshot', 700] };
+const HOLDS = {
+  fist:   ['✊ hold → reset', 900, resetView],
+  peace:  ['✌️ hold → X-ray', 700, toggleXray],
+  thumbs: ['👍 hold → screenshot', 800, screenshot],
+  point:  ['☝️ walk mode (coming next)', 99999, () => {}],
+};
 let hold = { name: '', t: 0, fired: false }, prev = null, mode = '';
 
-function log(msg) {
-  const t = new Date().toLocaleTimeString([], { minute: '2-digit', second: '2-digit' });
-  logEl.innerHTML = `<b>${t}</b> ${msg}<br>` + logEl.innerHTML.split('<br>').slice(0, 6).join('<br>');
-  if (navigator.vibrate) navigator.vibrate(40);
-}
-
-function recognize(hands) {
+function control(hands) {
   const info = hands.map((h, i) => classify(h, i));
   const pinching = info.filter(h => h.pose === 'pinch').sort((a, b) => a.pt.x - b.pt.x);
-  let label = hands.length ? NAMES[info[0].pose] : 'No hand', sub = '', holdName = '';
+  let label = hands.length ? 'idle' : 'no hand', holdName = '';
 
   if (pinching.length === 2) {
     const [a, b] = pinching;
     const cur = { dist: d(a.pt, b.pt), ang: Math.atan2(b.pt.y - a.pt.y, b.pt.x - a.pt.x) };
-    label = '🤏🤏 Two-hand pinch';
     if (mode === 'two' && prev) {
-      const zoom = cur.dist - prev.dist, twist = cur.ang - prev.ang;
-      sub = Math.abs(zoom) > .006 ? (zoom > 0 ? 'ZOOM IN' : 'ZOOM OUT') : Math.abs(twist) > .02 ? (twist > 0 ? 'TWIST ↻' : 'TWIST ↺') : 'hold steady';
+      T.dist = clamp(T.dist * (prev.dist / cur.dist), 6, 80);
+      T.yaw -= (cur.ang - prev.ang) * 1.5;
     }
-    mode = 'two'; prev = cur;
+    mode = 'two'; prev = cur; label = '🤏🤏 zoom / twist';
   } else if (pinching.length === 1) {
     const p = pinching[0].pt;
-    label = '🤏 Pinch → orbit';
     if (mode === 'one' && prev) {
-      const dx = p.x - prev.x, dy = p.y - prev.y;
-      sub = Math.hypot(dx, dy) < .004 ? 'hold steady' : Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'ORBIT →' : 'ORBIT ←') : (dy > 0 ? 'TILT ↓' : 'TILT ↑');
+      T.yaw += (p.x - prev.x) * 7;
+      T.pitch = clamp(T.pitch + (p.y - prev.y) * 4, 0.05, 1.45);
     }
-    mode = 'one'; prev = { ...p };
+    mode = 'one'; prev = { ...p }; label = '🤏 orbit';
   } else {
     const palm = info.find(h => h.pose === 'palm');
     if (palm) {
-      label = '🖐 Open palm → pan';
       if (mode === 'palm' && prev) {
         const dx = palm.wrist.x - prev.x, dy = palm.wrist.y - prev.y;
-        sub = Math.hypot(dx, dy) < .006 ? 'slide to pan' : Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'PAN →' : 'PAN ←') : (dy > 0 ? 'PAN ↓ (section cut)' : 'PAN ↑');
+        if (Math.hypot(dx, dy) > 0.003) { T.panX -= dx * 25; T.panY += dy * 18; }
       }
-      mode = 'palm'; prev = { ...palm.wrist };
+      mode = 'palm'; prev = { ...palm.wrist }; label = '🖐 pan';
     } else {
       mode = ''; prev = null;
       const h = info.find(h => HOLDS[h.pose]);
-      if (h) { holdName = h.pose; sub = 'hold for: ' + HOLDS[h.pose][0]; }
+      if (h) { holdName = h.pose; label = HOLDS[h.pose][0]; }
     }
   }
 
-  // hold progress
   const now = performance.now();
   if (holdName) {
     if (hold.name !== holdName) hold = { name: holdName, t: now, fired: false };
-    const [action, ms] = HOLDS[holdName];
+    const [, ms, fn] = HOLDS[holdName];
     const prog = Math.min(1, (now - hold.t) / ms);
-    ring.style.opacity = hold.fired ? 0 : 1;
+    ring.style.opacity = hold.fired || ms > 9999 ? 0 : 1;
     arc.setAttribute('stroke-dashoffset', 264 * (1 - prog));
-    if (prog >= 1 && !hold.fired) { hold.fired = true; log('✅ ' + action); }
+    if (prog >= 1 && !hold.fired) { hold.fired = true; fn(); }
   } else { hold.name = ''; ring.style.opacity = 0; }
 
-  labelEl.textContent = label;
-  subEl.textContent = sub || (hands.length ? '' : 'show your hand to the camera');
+  gestureEl.textContent = label;
   return info;
 }
 
-// ---------- Draw ----------
 const LINKS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 function mapPoint(p) {
-  // match object-fit: cover
   const W = cv.width, H = cv.height, vw = video.videoWidth, vh = video.videoHeight;
-  const s = Math.max(W / vw, H / vh), ox = (W - vw * s) / 2, oy = (H - vh * s) / 2;
-  return [p.x * vw * s + ox, p.y * vh * s + oy];
+  const s = Math.max(W / vw, H / vh);
+  return [p.x * vw * s + (W - vw * s) / 2, p.y * vh * s + (H - vh * s) / 2];
 }
-function draw(hands, info) {
+function drawHands(hands, info) {
   cv.width = cv.clientWidth * devicePixelRatio; cv.height = cv.clientHeight * devicePixelRatio;
   ctx.clearRect(0, 0, cv.width, cv.height);
   hands.forEach((h, i) => {
-    const col = info[i].pose === 'pinch' ? '#ffd166' : '#5ad1ff';
-    ctx.strokeStyle = col; ctx.lineWidth = 3 * devicePixelRatio; ctx.lineCap = 'round';
-    LINKS.forEach(([a, b]) => { const A = mapPoint(h[a]), B = mapPoint(h[b]); ctx.beginPath(); ctx.moveTo(...A); ctx.lineTo(...B); ctx.stroke(); });
-    ctx.fillStyle = '#fff';
-    h.forEach(p => { const P = mapPoint(p); ctx.beginPath(); ctx.arc(...P, 3.5 * devicePixelRatio, 0, 7); ctx.fill(); });
+    ctx.strokeStyle = info[i].pose === 'pinch' ? '#ffd166' : '#5ad1ff'; ctx.lineWidth = 2 * devicePixelRatio;
+    LINKS.forEach(([a, b]) => { ctx.beginPath(); ctx.moveTo(...mapPoint(h[a])); ctx.lineTo(...mapPoint(h[b])); ctx.stroke(); });
   });
 }
 
-function loop() {
-  if (video.readyState >= 2 && video.currentTime !== lastT) {
-    lastT = video.currentTime;
-    const res = landmarker.detectForVideo(video, performance.now());
-    const mirror = facing === 'user';
-    const hands = (res.landmarks || []).map(h => h.map(p => ({ x: mirror ? 1 - p.x : p.x, y: p.y })));
-    const info = recognize(hands);
-    draw(hands, info);
-  }
-  requestAnimationFrame(loop);
+function trackHands() {
+  if (!landmarker || video.readyState < 2 || video.currentTime === lastT) return;
+  lastT = video.currentTime;
+  const res = landmarker.detectForVideo(video, performance.now());
+  const hands = (res.landmarks || []).map(h => h.map(p => ({ x: 1 - p.x, y: p.y })));
+  drawHands(hands, control(hands));
 }
+
+// ================= LOOP =================
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+renderer.setAnimationLoop(() => { trackHands(); applyView(); renderer.render(scene, camera); });
 </script>
 </body>
 </html>
