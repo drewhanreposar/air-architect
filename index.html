@@ -145,6 +145,23 @@ function setModel(obj) {
   model.traverse(o => { if (o.isMesh) origMats.set(o, o.material); });
 }
 setModel(demoHouse());
+function fixMaterials(root) {
+  root.traverse(o => { if (!o.isMesh) return;
+    (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => {
+      m.side = THREE.DoubleSide;
+      if (m.map) { m.alphaTest = 0.5; m.map.colorSpace = THREE.SRGBColorSpace; }
+    });
+  });
+  return root;
+}
+// load the canopy by default (after the page is set up)
+setTimeout(async () => {
+  toast('Loading canopy model…');
+  try {
+    const dae = await new ColladaLoader().loadAsync('models/canopy.dae');
+    setModel(fixMaterials(dae.scene)); toast('Canopy loaded');
+  } catch (e) { console.error(e); toast('Canopy failed to load — showing demo house'); }
+});
 
 function toggleXray() {
   wireframe = !wireframe;
@@ -186,7 +203,7 @@ document.getElementById('file').addEventListener('change', async e => {
   toast('Loading model…');
   try {
     if (ext === 'glb' || ext === 'gltf') setModel((await new GLTFLoader(manager).loadAsync(url)).scene);
-    else if (ext === 'dae') setModel((await new ColladaLoader(manager).loadAsync(url)).scene);
+    else if (ext === 'dae') setModel(fixMaterials((await new ColladaLoader(manager).loadAsync(url)).scene));
     else if (ext === 'stl') setModel(new THREE.Mesh(await new STLLoader(manager).loadAsync(url), new THREE.MeshStandardMaterial({ color: 0xdddddd })));
     else {
       const loader = new OBJLoader(manager), mtl = files.find(f => /\.mtl$/i.test(f.name));
